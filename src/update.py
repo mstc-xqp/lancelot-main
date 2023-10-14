@@ -22,12 +22,14 @@ class BenignUpdate(object):
         for iter in range(self.args.local_ep):
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
                 optimizer.zero_grad()
-                images, labels = images.to(self.args.device), labels.to(self.args.device)
-                
-                log_probs = net(images)
-                
-                loss = self.loss_func(log_probs, labels.squeeze(dim=-1))
-
+                if self.args.dataset in ['chestmnist']:
+                    images, labels = images.to(self.args.device), labels.to(self.args.device, dtype=torch.float32)
+                    log_probs = net(images)
+                    loss = self.loss_func(log_probs, labels)
+                else:
+                    images, labels = images.to(self.args.device), labels.to(self.args.device)
+                    log_probs = net(images)
+                    loss = self.loss_func(log_probs, labels.squeeze(dim=-1))
                 loss.backward()
                 
                 optimizer.step()
@@ -44,7 +46,6 @@ class CompromisedUpdate(object):
 
         
         net_freeze = copy.deepcopy(net)
-        
         net.train()
         
         # train and update

@@ -15,10 +15,16 @@ def test_img(net_g, dataset, args):
             log_probs = net_g(data)
 
             # sum up batch loss
-            test_loss += F.cross_entropy(log_probs, target.squeeze(dim=-1), reduction='sum').item()
+            if args.dataset in ['chestmnist']:
+                y_pred = log_probs
+                test_loss += F.cross_entropy(log_probs, target, reduction='sum').item()
+
+            else:
+                y_pred = log_probs.data.max(1, keepdim=True)[1]
+                test_loss += F.cross_entropy(log_probs, target.squeeze(dim=-1), reduction='sum').item()
 
             # get the index of the max log-probability
-            y_pred = log_probs.data.max(1, keepdim=True)[1]
+
             correct += y_pred.eq(target.data.view_as(y_pred)).long().cpu().sum()
 
         test_loss /= len(data_loader.dataset)

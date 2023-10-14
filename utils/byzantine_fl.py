@@ -18,10 +18,17 @@ global DEBUG_MODE, lazy_relin_flag, LAZY_RELIN, Hoisting_flag
 
 DEBUG_MODE = 0
 lazy_relin_flag = 1
-Hoisting_flag = 0
-LAZY_RELIN = 1
+Hoisting_flag = 1
+LAZY_RELIN = 0
 
+all_encrypt_time=0.0
+all_encode_time=0.0
+all_lazy_time=0.0
+all_rota_time=0.0
 
+Nslot=32768
+
+log_Nslot=15
 
 def set_parameters():
      
@@ -74,10 +81,8 @@ def set_parameters():
 def euclid(v1, v2):
     diff = v1 - v2
     #print(list(diff[0:4095]))
-
     #print(sum(diff[0:4095]))
-    print(torch.matmul(diff[0:4095], diff[0:4095].T))
-
+    # print(torch.matmul(diff[0:4095], diff[0:4095].T))
     #print(list(diff[4096:8191]))
     #print(sum(diff[4096:8191]))
 
@@ -132,9 +137,9 @@ def GPU_compute_pair_distance(msg1, msg2,context,pk,sk,glk,rlk,encoder,scale):
         return two vector distance in ciphertext
     
     """
-    ringDim = 8192
+    ringDim = Nslot*2
     numSlots = int(ringDim / 2 )
-    rotation_key = [idx for idx in range(0, 12)]
+    rotation_key = [idx for idx in range(0, log_Nslot)]
 
     tmp = cahel.ciphertext(context)
     x0 = [0.0] * numSlots
@@ -223,8 +228,31 @@ def GPU_compute_pair_distance(msg1, msg2,context,pk,sk,glk,rlk,encoder,scale):
 
     # Rotaion and ADD:
     if Hoisting_flag:
-        pass
-        # TODO
+
+        pt_dec = sk.decrypt(context, tmp1)
+        result111 = encoder.decode(context, pt_dec)
+        print(sum(result111))
+        start_inloop = time.time()
+        tmp_rot = cahel.ciphertext(context)
+
+        ct2 = cahel.hoisting(context, tmp1, glk, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+        cahel.add_inplace(context, tmp1, ct2)
+
+        for idx in rotation_key[4:]:  # Check the demension
+            rotation_id = int(2 ** idx)
+
+            cahel.rotate_vector(context, tmp1, rotation_id, glk, tmp_rot)
+
+            pt_dec = sk.decrypt(context, tmp_rot)
+            result11 = encoder.decode(context, pt_dec)
+
+            cahel.add_inplace(context, tmp1, tmp_rot)
+
+            pt_dec = sk.decrypt(context, tmp1)
+            result22 = encoder.decode(context, pt_dec)
+
+        end_inloop = time.time()
+        print(f"hoisting time is {end_inloop - start_inloop}")
     else:
 
          pt_dec = sk.decrypt(context, tmp1)
@@ -251,6 +279,18 @@ def GPU_compute_pair_distance(msg1, msg2,context,pk,sk,glk,rlk,encoder,scale):
     print("no_lazy time",no_lazy_time)
     print("encrpyt time",encrypt_time)
     print("encode time",encode_time)
+
+    global all_encrypt_time
+    global all_encode_time
+    global all_lazy_time
+    global all_rota_time
+
+    all_encrypt_time+=encrypt_time
+    all_encode_time+=encode_time
+    all_lazy_time+=lazy_time
+    all_rota_time+=end_inloop - start_inloop
+
+
     cipher_distance = tmp1
     pt_dec = sk.decrypt(context, tmp1)
     result1 = encoder.decode(context, pt_dec)
@@ -310,6 +350,7 @@ def compute_pair_distance(msg1, msg2, cryptocontext, keyPair):
             tmp_mul = cryptocontext.EvalMult(ciph_tmp_1, ciph_tmp_2)
             ciph_zero = cryptocontext.EvalAdd(tmp_mul, ciph_zero)
             endtime = time.time()
+            lazy_time += endtime - starttime
             #print(f"CPU no lazy time is {endtime - starttime}")
     if lazy_relin_flag:
         ciph_zero = cryptocontext.Relinearize(ciph_zero)
@@ -391,6 +432,8 @@ def computing_distance_cipher(cryptocontext, keyPair, w_locals, args):
                 print(f"yige distance time is {end_inloop - start_inloop}")
     end = time.time()
     print(f"Distance Computing Time is {end - start}")
+
+
         
 
     if simple_ball:
@@ -431,7 +474,7 @@ def decrypt_sort_mask(cryptocontext, keyPair, distance_matrix):
 
         p_distance_tmp.SetLength(1) # scale ???
         print(str(p_distance_tmp))
-        p_distance.append(p_distance_tmp[0])
+        p_distance.append(p_distance_tmp)
 
     print(p_distance)
     # print(p_distance)
@@ -457,13 +500,13 @@ def GPU_decrypt_sort_mask(context,pk,sk,encoder,scale,distance_matrix):
     distance_final = [[] for i in range(num_clients)]
 
     p_distance = []
-    x1 = [1.0] * 4096
+    x1 = [1.0] * Nslot
     pt_tmp1 = encoder.encode(context, x1, scale)
     tmp1 = pk.encrypt_asymmetric(context, pt_tmp1)
 
     for idx in range(num_clients):
 
-        x0 = [0.0] * 4096
+        x0 = [0.0] * Nslot
         pt_tmp = encoder.encode(context, x0, scale)
         tmp = pk.encrypt_asymmetric(context, pt_tmp)
         cahel.mod_switch_to_inplace(context, tmp, 2)
@@ -488,7 +531,7 @@ def GPU_decrypt_sort_mask(context,pk,sk,encoder,scale,distance_matrix):
 
     mask = [[] for idx in range(num_clients)]
 
-    x0 = [0.0] * 4096
+    x0 = [0.0] * Nslot
     pt_tmp0 = encoder.encode(context, x0, scale)
     tmp0 = pk.encrypt_asymmetric(context, pt_tmp0)
 
@@ -496,7 +539,7 @@ def GPU_decrypt_sort_mask(context,pk,sk,encoder,scale,distance_matrix):
         mask[idx] = [tmp0 for idy in range(num_clients)]
 
     for idx in range(num_clients):
-        mask[idx][p_distance_sort[idx]] = tmp1  # shape of mask is ===> [10, 10, 2048] duijiao juzhen
+        mask[idx][p_distance_sort[idx]] = tmp1  # shape of mask is ===> [10, 10, Nshot] duijiao juzhen
 
     print(f"The shape of Mask is {len(mask), len(mask[0])},  RingDemension_divide_2")
     return mask
@@ -523,7 +566,7 @@ def GPU_mul_mask_weight(context,pk,encoder,scale,rlk,vectors_final,mask):
 
     tmp=cahel.ciphertext(context)
 
-    x0 = [0.0] * 4096
+    x0 = [0.0] * Nslot
     pt_tmp1 = encoder.encode(context, x0, scale)
     tmp1 = pk.encrypt_asymmetric(context, pt_tmp1) # zero ciphertext
 
@@ -548,7 +591,6 @@ def GPU_mul_mask_weight(context,pk,encoder,scale,rlk,vectors_final,mask):
 
                 if lazy_relin_flag:
                     cahel.multiply(context, ct2, ct1,tmp)
-
                     cahel.add_inplace(context, tmp4lazy, tmp)
 
                 else:
@@ -557,6 +599,8 @@ def GPU_mul_mask_weight(context,pk,encoder,scale,rlk,vectors_final,mask):
                     ct2.set_scale(scale)
                     cahel.mod_switch_to_inplace(context, ct2, 2)
                     cahel.add_inplace(context, tmp1, ct2)
+
+    # if lazy_relin_flag:
 
         # vectors_final_new[idx][idy] = zero_tmp_inner_loop
 
@@ -601,6 +645,8 @@ def mul_mask_weight(cryptocontext, keyPair, vectors_final, mask):
     start = time.time()
 
     for idx, ciph_tmp_1 in enumerate(mask): # 10 , 10, cipher
+        if idx>0:
+            break
         for idy, msg1 in tqdm(enumerate(vectors_final_reshape)): # 5000+ , 10, cipher
             zero_tmp_inner_loop = ciph_zero
             for cipher_1, msg_item in zip(ciph_tmp_1, msg1):
@@ -628,10 +674,11 @@ def mul_mask_weight(cryptocontext, keyPair, vectors_final, mask):
 
 def GPU_init():
     # ckks tet
-    log_n = 13
+    log_n = log_Nslot+1
     n = 2 ** log_n
     modulus_chain = [60, 40, 40,60]
-    #galois_steps = [1,2,4,8,16,32,64,128,256,512,1024]
+    galois_steps = [i for i in range(1, 16)]
+    galois_steps += [2**i for i in range(4, log_n - 1)]
     size_P = 1
     scale = 2.0 ** 40
 
@@ -639,7 +686,7 @@ def GPU_init():
     params.set_poly_modulus_degree(n)
     params.set_coeff_modulus(cahel.coeff_modulus_create(n, modulus_chain))
     params.set_special_modulus_size(size_P)
-    #params.set_galois_elts(cahel.get_elts_from_steps(galois_steps, n))
+    params.set_galois_elts(cahel.get_elts_from_steps(galois_steps, n))
 
     context = cahel.context(params, True, cahel.sec_level_type.tc128)
 
@@ -669,7 +716,7 @@ def GPU_computing_distance_cipher(context,pk,sk,glk,rlk,encoder, scale, w_locals
     print(num_clients, weight_len, type(vectors[0]))
 
     # padding
-    ringDim = 8192
+    ringDim = Nslot*2
     numSlots = int(ringDim / 2)
 
     if weight_len % numSlots == 0:
@@ -718,6 +765,11 @@ def GPU_computing_distance_cipher(context,pk,sk,glk,rlk,encoder, scale, w_locals
 
     print(f"all Distance Computing Time is {end1 - start1}")
 
+    print(f"all rota  Time is {all_rota_time}")
+    print(f"all encrypt  Time is {all_encrypt_time}")
+    print(f"all encode  Time is {all_encode_time}")
+    print(f"all lazy  Time is {all_lazy_time}")
+
     if simple_ball:
         pass
         # TODO
@@ -739,7 +791,7 @@ def GPU_krum(w_locals, c, args):
 def krum(w_locals, c, args):
 
     n = len(w_locals) - c
-    args.ckks = 0
+    args.ckks = 0 #mingwen miwen
     if args.ckks:
         cryptocontext, keypair = set_parameters()
         distance_matrix, vectors_final = computing_distance_cipher(cryptocontext, keypair, w_locals, args)
@@ -749,10 +801,22 @@ def krum(w_locals, c, args):
         raise ValueError
 
     else:
+        start=time.time()
         distance = pairwise_distance(w_locals, args)
         sorted_idx = distance.sum(dim=0).argsort()[: n]
         chosen_idx = int(sorted_idx[0])
-        
+        end = time.time()
+        print("mingwen time=",end-start)
+    return copy.deepcopy(w_locals[chosen_idx]), chosen_idx
+
+def distancemean(w_locals, c, args):
+
+    start=time.time()
+    distance = pairwise_distance(w_locals, args)
+    sorted_idx = distance.sum(dim=0).argsort()[: n]
+    chosen_idx = int(sorted_idx[len(w_locals/2)])
+    end = time.time()
+    print("mingwen time=",end-start)
     return copy.deepcopy(w_locals[chosen_idx]), chosen_idx
 
 

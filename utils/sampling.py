@@ -3,8 +3,14 @@ import numpy as np
 def noniid(dataset, args):
 
     idxs = np.arange(len(dataset))
-    labels = np.transpose(np.array(dataset.labels))
-    
+
+    if args.dataset in ["CIFAR10", "MNIST", "FaMNIST"]:
+
+        labels = np.transpose(np.array(dataset.targets))
+    else:
+        labels = np.transpose(np.array(dataset.labels))
+
+
     dict_users = {i: list() for i in range(args.num_clients)}
     dict_labels = dict()
     
