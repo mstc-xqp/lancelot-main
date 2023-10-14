@@ -526,6 +526,7 @@ def GPU_decrypt_sort_mask(context,pk,sk,encoder,scale,distance_matrix):
     # based on a sorted array, produce a mask;
 
     p_distance_sort=np.argsort(p_distance)
+    print(p_distance_sort)
 
     #sort_list = [i for i in range(num_clients)]
 
@@ -542,7 +543,7 @@ def GPU_decrypt_sort_mask(context,pk,sk,encoder,scale,distance_matrix):
         mask[idx][p_distance_sort[idx]] = tmp1  # shape of mask is ===> [10, 10, Nshot] duijiao juzhen
 
     print(f"The shape of Mask is {len(mask), len(mask[0])},  RingDemension_divide_2")
-    return mask
+    return mask,p_distance_sort[0]
 
 def GPU_mul_mask_weight(context,pk,encoder,scale,rlk,vectors_final,mask):
     client_num, word_num, word_length = len(vectors_final), len(vectors_final[0]), len(vectors_final[0][0])
@@ -784,9 +785,13 @@ def GPU_krum(w_locals, c, args):
     distance_matrix, vectors_final = GPU_computing_distance_cipher(context,pk,sk,glk,rlk,encoder, scale, w_locals)
 
 
-    mask = GPU_decrypt_sort_mask(context,pk,sk,encoder,scale,distance_matrix)
+    mask,chosen_idx = GPU_decrypt_sort_mask(context,pk,sk,encoder,scale,distance_matrix)
 
+    print("chosen_idx", chosen_idx)
     GPU_mul_mask_weight(context, pk, encoder, scale, rlk,vectors_final,mask)
+
+
+    return copy.deepcopy(w_locals[chosen_idx]), chosen_idx
 
 def krum(w_locals, c, args):
 
@@ -807,6 +812,9 @@ def krum(w_locals, c, args):
         chosen_idx = int(sorted_idx[0])
         end = time.time()
         print("mingwen time=",end-start)
+        print("chosen_idx",chosen_idx)
+        print(distance.sum(dim=0)[:n])
+        print(sorted_idx)
     return copy.deepcopy(w_locals[chosen_idx]), chosen_idx
 
 def distancemean(w_locals, c, args):

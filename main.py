@@ -25,7 +25,7 @@ if __name__ == '__main__':
     args = args_parser()
     args.device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() and args.gpu != -1 else 'cpu')
 
-    args.dataset = "MNIST"
+    args.dataset = "CIFAR10"
     #args.num_classes = 14
     if args.dataset in ["CIFAR10", "MNIST", "FaMNIST","SVHN"]:
     # Change the package  [/home/syjiang/anaconda3/lib/python3.11/site-packages/torchvision/models/resnet.py] Line 197 3 ==> 1 in MNIST and FaMNIST
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    args.num_clients = 10           #change client
+    args.num_clients = 4          #change client
    # args.method = 'trimmed_mean'   #change method
 
     dataset_train, dataset_test, dataset_val = load_data(args)
